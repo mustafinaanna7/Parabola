@@ -2,36 +2,48 @@
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Shapes;
+using System.Windows.Threading;
 
-namespace ParabolaFlightSimulator
+namespace MotionTrajectoryVisualization
 {
     public partial class MainWindow : Window
     {
-        private List<Bird> availableBirds = new List<Bird>()
+        private List<MotionObject> availableObjects = new List<MotionObject>()
         {
-            new Bird("Обычная", 0, 0.47, 1.225, 0.01, 0.1),
-            new Bird("Красная", 5, 0.47, 1.225, 0.01, 0.1),
-            new Bird("Желтая", 10, 0.47, 1.225, 0.01, 0.15)
+            new MotionObject("Обычная", 0, 0.47, 1.225, 0.01, 0.1, Brushes.Blue),
+            new MotionObject("Жёлтая", 5, 0.8, 1.225, 0.02, 0.2, Brushes.Yellow),
+            new MotionObject("Оранжевая", 10, 0.5, 1.225, 0.015, 0.15, Brushes.Orange)
         };
+
+        private DispatcherTimer animationTimer;
+        private List<ProjectileMotion.TrajectoryPoint> trajectoryPoints;
+        private int currentAnimationIndex;
+        private double scaleFactor = 10;
+        private Polyline trajectoryLine;
+        private Ellipse movingObject;
 
         public MainWindow()
         {
             InitializeComponent();
-            cmbBird.ItemsSource = availableBirds;
-            cmbBird.SelectedIndex = 0;
+            cmbObject.ItemsSource = availableObjects;
+            cmbObject.SelectedIndex = 0;
+
+            animationTimer = new DispatcherTimer();
+            animationTimer.Tick += AnimationTimer_Tick;
         }
 
-        private void BtnStartFlight_Click(object sender, RoutedEventArgs e)
+        private void BtnStartSimulation_Click(object sender, RoutedEventArgs e)
         {
             try
             {
                 txtOutput.Text = "";
+                canvasTrajectory.Children.Clear();
 
-                // Получаем выбранную птицу
-                Bird selectedBird = (Bird)cmbBird.SelectedItem;
+                MotionObject selectedObject = (MotionObject)cmbObject.SelectedItem;
 
-                // Считываем параметры
-                double initialVelocity = double.Parse(txtInitialVelocity.Text) + selectedBird.VelocityModifier;
+                double initialVelocity = double.Parse(txtInitialVelocity.Text) + selectedObject.VelocityModifier;
                 double launchAngle = double.Parse(txtLaunchAngle.Text);
                 double wallDistance = double.Parse(txtWallDistance.Text);
 
@@ -41,37 +53,37 @@ namespace ParabolaFlightSimulator
                     return;
                 }
 
-                // Создаем объект для расчета траектории
                 ProjectileMotion projectile = new ProjectileMotion(
                     initialVelocity,
                     launchAngle,
-                    dragCoefficient: selectedBird.DragCoefficient,
-                    airDensity: selectedBird.AirDensity,
-                    projectileArea: selectedBird.ProjectileArea,
-                    projectileMass: selectedBird.ProjectileMass);
+                    dragCoefficient: selectedObject.DragCoefficient,
+                    airDensity: selectedObject.AirDensity,
+                    projectileArea: selectedObject.ProjectileArea,
+                    projectileMass: selectedObject.ProjectileMass);
 
-                // Рассчитываем дальность без учета сопротивления
                 double range = projectile.GetRange();
                 AddOutputText($"Дальность полёта (без учета сопротивления): {range:F2}м.");
 
-                // Устанавливаем обработчик столкновения со стеной
-                projectile.OnWallCollision += (s, args) =>
+                projectile.OnObstacleCollision += (s, args) =>
                 {
-                    AddOutputText($"\nСтолкновение со стеной! X={args.CollisionX:F2}, Y={args.CollisionY:F2}");
+                    AddOutputText($"\nСтолкновение с препятствием! X={args.CollisionX:F2}, Y={args.CollisionY:F2}");
                 };
 
-                // Рассчитываем траекторию
                 double timeStep = 0.01;
                 double maxTotalTime = 10;
-                List<ProjectileMotion.TrajectoryPoint> trajectory =
+                trajectoryPoints =
                     projectile.EulerMethod(timeStep, maxTotalTime, wallDistance);
 
-                // Выводим результаты
+                DrawStaticElements(wallDistance);
+                InitializeTrajectoryLine(selectedObject.TrajectoryColor);
+
                 AddOutputText("\nКоординаты тела в разные моменты времени (с учетом сопротивления):");
-                foreach (var point in trajectory)
+                foreach (var point in trajectoryPoints)
                 {
                     AddOutputText($"t={point.Time:F2}с.; X={point.X:F2}м.; Y={point.Y:F2}м.");
                 }
+
+                StartAnimation(selectedObject.Color);
             }
             catch (FormatException)
             {
@@ -81,6 +93,88 @@ namespace ParabolaFlightSimulator
             {
                 MessageBox.Show($"Произошла ошибка: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        private void DrawStaticElements(double wallDistance)
+        {
+            // Рисуем ось X (землю)
+            var groundLine = new Line()
+            {
+                X1 = 0,
+                Y1 = canvasTrajectory.ActualHeight - 20,
+                X2 = canvasTrajectory.ActualWidth,
+                Y2 = canvasTrajectory.ActualHeight - 20,
+                Stroke = Brushes.Black,
+                StrokeThickness = 2
+            };
+            canvasTrajectory.Children.Add(groundLine);
+
+            // Рисуем препятствие (стену)
+            double wallX = wallDistance * scaleFactor;
+            var wallLine = new Line()
+            {
+                X1 = wallX,
+                Y1 = canvasTrajectory.ActualHeight - 20,
+                X2 = wallX,
+                Y2 = 0,
+                Stroke = Brushes.Red,
+                StrokeThickness = 2,
+                StrokeDashArray = new DoubleCollection() { 5, 2 }
+            };
+            canvasTrajectory.Children.Add(wallLine);
+        }
+
+        private void InitializeTrajectoryLine(Brush color)
+        {
+            trajectoryLine = new Polyline()
+            {
+                Stroke = color,
+                StrokeThickness = 1
+            };
+            canvasTrajectory.Children.Add(trajectoryLine);
+        }
+
+        private void StartAnimation(Brush objectColor)
+        {
+            if (trajectoryPoints == null || trajectoryPoints.Count == 0) return;
+
+            currentAnimationIndex = 0;
+
+            // Создаем движущийся объект
+            movingObject = new Ellipse()
+            {
+                Width = 10,
+                Height = 10,
+                Fill = objectColor,
+                Stroke = Brushes.Black,
+                StrokeThickness = 1
+            };
+            canvasTrajectory.Children.Add(movingObject);
+
+            animationTimer.Interval = TimeSpan.FromMilliseconds(30);
+            animationTimer.Start();
+        }
+
+        private void AnimationTimer_Tick(object sender, EventArgs e)
+        {
+            if (currentAnimationIndex >= trajectoryPoints.Count)
+            {
+                animationTimer.Stop();
+                return;
+            }
+
+            var point = trajectoryPoints[currentAnimationIndex];
+            double x = point.X * scaleFactor;
+            double y = canvasTrajectory.ActualHeight - 20 - (point.Y * scaleFactor);
+
+            // Обновляем позицию движущегося объекта
+            Canvas.SetLeft(movingObject, x - 5);
+            Canvas.SetTop(movingObject, y - 5);
+
+            // Добавляем точку в траекторию
+            trajectoryLine.Points.Add(new Point(x, y));
+
+            currentAnimationIndex++;
         }
 
         public void AddOutputText(string text)
@@ -93,7 +187,7 @@ namespace ParabolaFlightSimulator
         }
     }
 
-    public class Bird
+    public class MotionObject
     {
         public string Name { get; set; }
         public double VelocityModifier { get; set; }
@@ -101,9 +195,11 @@ namespace ParabolaFlightSimulator
         public double AirDensity { get; set; }
         public double ProjectileArea { get; set; }
         public double ProjectileMass { get; set; }
+        public Brush Color { get; set; }
+        public Brush TrajectoryColor { get; set; }
 
-        public Bird(string name, double velocityModifier, double dragCoefficient,
-                  double airDensity, double projectileArea, double projectileMass)
+        public MotionObject(string name, double velocityModifier, double dragCoefficient,
+                          double airDensity, double projectileArea, double projectileMass, Brush color)
         {
             Name = name;
             VelocityModifier = velocityModifier;
@@ -111,6 +207,11 @@ namespace ParabolaFlightSimulator
             AirDensity = airDensity;
             ProjectileArea = projectileArea;
             ProjectileMass = projectileMass;
+            Color = color;
+
+            // Создаем полупрозрачную версию цвета для траектории
+            TrajectoryColor = color.Clone();
+            TrajectoryColor.Opacity = 0.7;
         }
 
         public override string ToString() => Name;
@@ -152,7 +253,7 @@ namespace ParabolaFlightSimulator
             return ((Math.Pow(InitialVelocity, 2) * Math.Sin(2 * angleInRadians)) / Gravity);
         }
 
-        public List<TrajectoryPoint> EulerMethod(double timeStep, double maxTotalTime, double wallDistance)
+        public List<TrajectoryPoint> EulerMethod(double timeStep, double maxTotalTime, double obstacleDistance)
         {
             List<TrajectoryPoint> trajectory = new List<TrajectoryPoint>();
 
@@ -170,41 +271,33 @@ namespace ParabolaFlightSimulator
             {
                 trajectory.Add(new TrajectoryPoint { X = x, Y = y, Time = time });
 
-                // Проверка на столкновение со стеной
-                if (x >= wallDistance)
+                if (x >= obstacleDistance)
                 {
                     collisionOccurred = true;
-                    OnWallCollision?.Invoke(this, new WallCollisionEventArgs(x, y));
+                    OnObstacleCollision?.Invoke(this, new ObstacleCollisionEventArgs(x, y));
                     break;
                 }
 
-                // Расчет сил сопротивления
                 double velocity = Math.Sqrt(vx * vx + vy * vy);
                 double dragForce = 0.5 * DragCoefficient * AirDensity * ProjectileArea * velocity * velocity;
 
-                // Компоненты силы сопротивления
                 double dragForceX = dragForce * (vx / velocity);
                 double dragForceY = dragForce * (vy / velocity);
 
-                // Ускорение с учетом сопротивления воздуха и гравитации
                 double ax = -dragForceX / ProjectileMass;
                 double ay = -Gravity - dragForceY / ProjectileMass;
 
-                // Обновление скорости методом Эйлера
                 vx += ax * timeStep;
                 vy += ay * timeStep;
 
-                // Обновление позиции
                 x += vx * timeStep;
                 y += vy * timeStep;
 
                 time += timeStep;
 
-                // Проверка на "приземление"
                 if (y < 0)
                 {
                     landed = true;
-                    // Корректировка конечной позиции для точного определения точки падения
                     double timeToLand = -y / vy;
                     x -= vx * timeToLand;
                     y = 0;
@@ -216,15 +309,15 @@ namespace ParabolaFlightSimulator
             return trajectory;
         }
 
-        public event EventHandler<WallCollisionEventArgs> OnWallCollision;
+        public event EventHandler<ObstacleCollisionEventArgs> OnObstacleCollision;
     }
 
-    public class WallCollisionEventArgs : EventArgs
+    public class ObstacleCollisionEventArgs : EventArgs
     {
         public double CollisionX { get; }
         public double CollisionY { get; }
 
-        public WallCollisionEventArgs(double x, double y)
+        public ObstacleCollisionEventArgs(double x, double y)
         {
             CollisionX = x;
             CollisionY = y;

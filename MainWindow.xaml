@@ -1,7 +1,7 @@
-﻿<Window x:Class="ParabolaFlightSimulator.MainWindow"
+﻿<Window x:Class="MotionTrajectoryVisualization.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Параболический полет с птицами" Height="600" Width="800">
+        Title="Визуализация траектории движения" Height="600" Width="900">
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="300"/>
@@ -9,10 +9,10 @@
         </Grid.ColumnDefinitions>
 
         <StackPanel Grid.Column="0" Margin="10">
-            <GroupBox Header="Параметры полета" Margin="0,0,0,10">
+            <GroupBox Header="Параметры движения" Margin="0,0,0,10">
                 <StackPanel>
-                    <Label Content="Выберите птицу:"/>
-                    <ComboBox x:Name="cmbBird" DisplayMemberPath="Name"/>
+                    <Label Content="Выберите объект:"/>
+                    <ComboBox x:Name="cmbObject" DisplayMemberPath="Name"/>
 
                     <Label Content="Начальная скорость (м/с):"/>
                     <TextBox x:Name="txtInitialVelocity" Text="15"/>
@@ -20,19 +20,23 @@
                     <Label Content="Угол запуска (градусы):"/>
                     <TextBox x:Name="txtLaunchAngle" Text="45"/>
 
-                    <Label Content="Расстояние до стены (м):"/>
+                    <Label Content="Расстояние до препятствия (м):"/>
                     <TextBox x:Name="txtWallDistance" Text="50"/>
                 </StackPanel>
             </GroupBox>
 
-            <Button x:Name="BtnStartFlight" Content="Запустить полет" 
-                    Click="BtnStartFlight_Click" Height="30" Margin="0,10,0,0"/>
+            <Button x:Name="BtnStartSimulation" Content="Начать моделирование" 
+                    Click="BtnStartSimulation_Click" Height="30" Margin="0,10,0,0"/>
+
+            <GroupBox Header="Результаты" Margin="0,10,0,0">
+                <TextBox x:Name="txtOutput" IsReadOnly="True" 
+                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                         TextWrapping="Wrap" FontFamily="Consolas" Height="150"/>
+            </GroupBox>
         </StackPanel>
 
-        <GroupBox Grid.Column="1" Header="Результаты" Margin="10">
-            <TextBox x:Name="txtOutput" IsReadOnly="True" 
-                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                     TextWrapping="Wrap" FontFamily="Consolas"/>
+        <GroupBox Grid.Column="1" Header="Визуализация траектории" Margin="10">
+            <Canvas x:Name="canvasTrajectory" Background="White"/>
         </GroupBox>
     </Grid>
 </Window>
