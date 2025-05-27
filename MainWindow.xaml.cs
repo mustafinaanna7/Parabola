@@ -1,10 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Runtime.Serialization.Formatters.Binary;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using System.Windows.Threading;
+using Microsoft.Win32;
 
 namespace MotionTrajectoryVisualization
 {
@@ -185,6 +189,92 @@ namespace MotionTrajectoryVisualization
                 txtOutput.ScrollToEnd();
             });
         }
+
+        #region File Operations
+
+        private void MenuItem_Save_Click(object sender, RoutedEventArgs e)
+        {
+            if (trajectoryPoints == null || trajectoryPoints.Count == 0)
+            {
+                MessageBox.Show("Нет данных для сохранения. Сначала выполните моделирование.", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            SaveFileDialog saveDialog = new SaveFileDialog
+            {
+                Filter = "Trajectory files (*.trj)|*.trj|All files (*.*)|*.*",
+                DefaultExt = ".trj",
+                Title = "Сохранить траекторию"
+            };
+
+            if (saveDialog.ShowDialog() == true)
+            {
+                try
+                {
+                    using (FileStream fs = new FileStream(saveDialog.FileName, FileMode.Create))
+                    {
+                        BinaryFormatter formatter = new BinaryFormatter();
+                        formatter.Serialize(fs, trajectoryPoints);
+                    }
+                    MessageBox.Show("Траектория успешно сохранена.", "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Ошибка при сохранении файла: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private void MenuItem_Load_Click(object sender, RoutedEventArgs e)
+        {
+            OpenFileDialog openDialog = new OpenFileDialog
+            {
+                Filter = "Trajectory files (*.trj)|*.trj|All files (*.*)|*.*",
+                DefaultExt = ".trj",
+                Title = "Загрузить траекторию"
+            };
+
+            if (openDialog.ShowDialog() == true)
+            {
+                try
+                {
+                    using (FileStream fs = new FileStream(openDialog.FileName, FileMode.Open))
+                    {
+                        BinaryFormatter formatter = new BinaryFormatter();
+                        trajectoryPoints = (List<ProjectileMotion.TrajectoryPoint>)formatter.Deserialize(fs);
+                    }
+
+                    // Clear and redraw
+                    txtOutput.Text = "Траектория загружена из файла.";
+                    canvasTrajectory.Children.Clear();
+
+                    // Get selected object for color
+                    MotionObject selectedObject = (MotionObject)cmbObject.SelectedItem;
+                    DrawStaticElements(double.Parse(txtWallDistance.Text));
+                    InitializeTrajectoryLine(selectedObject.TrajectoryColor);
+                    StartAnimation(selectedObject.Color);
+
+                    MessageBox.Show("Траектория успешно загружена.", "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Ошибка при загрузке файла: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private void MenuItem_Exit_Click(object sender, RoutedEventArgs e)
+        {
+            Application.Current.Shutdown();
+        }
+
+        private void MenuItem_About_Click(object sender, RoutedEventArgs e)
+        {
+            MessageBox.Show("Motion Trajectory Visualization\nВерсия 1.0\n\nПрограмма для моделирования траектории движения объектов с учетом сопротивления воздуха.",
+                          "О программе", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        #endregion
     }
 
     public class MotionObject
@@ -219,6 +309,7 @@ namespace MotionTrajectoryVisualization
 
     public class ProjectileMotion
     {
+        [Serializable]
         public class TrajectoryPoint
         {
             public double X { get; set; }
